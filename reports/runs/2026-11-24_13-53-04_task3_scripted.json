@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-11-24T13:53:04",
+  "task_id": 3,
+  "task_name": "Wired Mechanical Keyboard & Mouse Bundle",
+  "agent_type": "scripted",
+  "model": "N/A",
+  "steps": 3,
+  "total_reward": 1.68,
+  "real_total": 3598,
+  "webshop_score": 1.0,
+  "passed": true,
+  "checks": {
+    "order_exists": true,
+    "order_completed": true,
+    "catalog_integrity": true,
+    "required_categories": true,
+    "attr_Keyboard_type": true,
+    "attr_Keyboard_connectivity": true,
+    "attr_Mouse_connectivity": true,
+    "item_count_range": true,
+    "budget_constraint": true
+  },
+  "reason": "Task successfully verified",
+  "order_id": "ORD-ENV-5A60BEDA"
+}
