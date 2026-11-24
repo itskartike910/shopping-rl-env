@@ -1,0 +1,116 @@
+[
+  {
+    "task_id": 1,
+    "difficulty": "Trivial",
+    "name": "Direct Item Purchase",
+    "instruction": "Purchase 1 unit of Milton Stainless Steel Water Bottle (Product ID: BOT-01).",
+    "max_steps": 10,
+    "constraints": {
+      "required_product_ids": ["BOT-01"],
+      "required_categories": ["Bottle"],
+      "attribute_requirements": {},
+      "socket_compatibility": false,
+      "min_ram_gb": null,
+      "min_storage_gb": null,
+      "max_budget": 1000,
+      "min_item_count": 1,
+      "max_item_count": 1
+    }
+  },
+  {
+    "task_id": 2,
+    "difficulty": "Easy",
+    "name": "Constrained Wireless Mouse Purchase",
+    "instruction": "Find and purchase a black wireless mouse with a total price under ₹5,000.",
+    "max_steps": 15,
+    "constraints": {
+      "required_product_ids": [],
+      "required_categories": ["Mouse"],
+      "attribute_requirements": {
+        "Mouse": {
+          "connectivity": "Wireless",
+          "color": "Black"
+        }
+      },
+      "socket_compatibility": false,
+      "min_ram_gb": null,
+      "min_storage_gb": null,
+      "max_budget": 5000,
+      "min_item_count": 1,
+      "max_item_count": 1
+    }
+  },
+  {
+    "task_id": 3,
+    "difficulty": "Medium",
+    "name": "Wired Mechanical Keyboard & Mouse Bundle",
+    "instruction": "Purchase both a wired mechanical keyboard and a wired mouse with a total budget under ₹5,000.",
+    "max_steps": 20,
+    "constraints": {
+      "required_product_ids": [],
+      "required_categories": ["Keyboard", "Mouse"],
+      "attribute_requirements": {
+        "Keyboard": {
+          "type": "Mechanical",
+          "connectivity": "Wired"
+        },
+        "Mouse": {
+          "connectivity": "Wired"
+        }
+      },
+      "socket_compatibility": false,
+      "min_ram_gb": null,
+      "min_storage_gb": null,
+      "max_budget": 5000,
+      "min_item_count": 2,
+      "max_item_count": 2
+    }
+  },
+  {
+    "task_id": 4,
+    "difficulty": "Hard",
+    "name": "Socket-Compatible Core PC Bundle",
+    "instruction": "Assemble a core PC bundle with a CPU, a socket-compatible Motherboard, and at least 16GB RAM for under ₹45,000.",
+    "max_steps": 25,
+    "constraints": {
+      "required_product_ids": [],
+      "required_categories": ["CPU", "Motherboard", "RAM"],
+      "attribute_requirements": {},
+      "socket_compatibility": true,
+      "min_ram_gb": 16,
+      "min_storage_gb": null,
+      "max_budget": 45000,
+      "min_item_count": 3,
+      "max_item_count": 4
+    }
+  },
+  {
+    "task_id": 5,
+    "difficulty": "Very Hard",
+    "name": "Complete Gaming PC Setup",
+    "instruction": "Build a complete gaming setup including CPU, compatible Motherboard, RAM (min 16GB), SSD (min 500GB), GPU, Cabinet, PSU, Monitor, Keyboard, and Mouse under ₹1,15,000.",
+    "max_steps": 50,
+    "constraints": {
+      "required_product_ids": [],
+      "required_categories": [
+        "CPU",
+        "Motherboard",
+        "RAM",
+        "SSD",
+        "GPU",
+        "Cabinet",
+        "PSU",
+        "Monitor",
+        "Keyboard",
+        "Mouse"
+      ],
+      "attribute_requirements": {},
+      "socket_compatibility": true,
+      "min_ram_gb": 16,
+      "min_storage_gb": 500,
+      "max_budget": 115000,
+      "min_item_count": 10,
+      "max_item_count": 12
+    }
+  }
+]
