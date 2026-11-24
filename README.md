@@ -4,9 +4,11 @@
 
 ---
 
-## ⚡ Quickstart: Run in One Command
+## ⚡ Quickstart
 
-### 1. Setup Virtual Environment (`.venv`)
+### 1. Setup Virtual Environment (Linux, macOS & Windows)
+
+#### On Linux / macOS:
 ```bash
 cd shopping-rl-env
 python3 -m venv .venv
@@ -15,59 +17,95 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
-### 2. One Command to Run Baseline Agent (All 5 Tasks)
+#### On Windows (PowerShell):
+```powershell
+cd shopping-rl-env
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+playwright install chromium
+$env:PYTHONPATH="."
+```
+
+#### On Windows (Command Prompt / CMD):
+```cmd
+cd shopping-rl-env
+python -m venv .venv
+.venv\Scripts\activate.bat
+pip install -r requirements.txt
+playwright install chromium
+set PYTHONPATH=.
+```
+
+---
+
+### 2. Run Baseline Agent (All 5 Tasks)
+Evaluates the deterministic baseline policy across all 5 benchmark tasks and auto-saves run reports:
 ```bash
 PYTHONPATH=. python agents/scripted_agent.py
 ```
+*(On Windows CMD: `set PYTHONPATH=. && python agents/scripted_agent.py`)*
 
-### 3. Run Headed Chromium Browser Agent (Watch it on Screen!)
-You can watch the browser visually click, search, add products, and checkout in real time:
+---
+
+### 3. Run Headed Chromium Browser Agent (Native Host Display)
+> **Note:** Because Docker runs in a headless container without direct display access on macOS and Windows, visual browser execution runs natively on your host OS:
 
 ```bash
-# 1. Run Scripted Agent in Headed Chromium (Task 1)
+# 1. Run Scripted Agent in visible Chromium (Task 1)
 PYTHONPATH=. python agents/browser_agent.py --task 1 --mode scripted --headed
 
-# 2. Run Scripted Agent on Task 2 (Wireless Mouse)
+# 2. Run Scripted Agent on Task 2 (Constrained Wireless Mouse)
 PYTHONPATH=. python agents/browser_agent.py --task 2 --mode scripted --headed
 
-# 3. Run Groq LLM Agent in Headed Chromium (AI reads screen & drives browser)
+# 3. Run Groq LLM Agent in visible Chromium (AI reads screen & drives browser)
 PYTHONPATH=. python agents/browser_agent.py --task 1 --mode groq --headed
 
 # (Omit --headed to run in headless background mode)
 ```
 
-### 4. Run Headed Chromium Using Docker
-To let Docker show a visible browser window on your host display:
+---
 
+### 4. Run Fast Headless RL Training & Evaluation
 ```bash
-# Step 1: Allow Docker to access your X11 display (run on your Linux terminal)
-xhost +local:docker
-
-# Step 2: Run Scripted Agent headed inside Docker
-docker compose run --rm agent-eval python agents/browser_agent.py --task 1 --mode scripted --headed
-
-# Step 3: Run Groq LLM Agent headed inside Docker
-docker compose run --rm agent-eval python agents/browser_agent.py --task 1 --mode groq --headed
-```
-
-### 5. Run Fast Headless RL Training & Evaluation
-```bash
-# Groq LLM in Gym environment
+# Groq LLM in Gymnasium environment
 PYTHONPATH=. python agents/groq_agent.py 1 qwen/qwen3.8-27b
 
-# Policy Gradient RL trainer
+# Pure NumPy Policy Gradient RL trainer
 PYTHONPATH=. python agents/ppo_agent.py 1
 ```
 
-### 6. One Command to Run Full Test Suite (12 Tests)
+---
+
+### 5. Run Full Test Suite (12 Tests)
 ```bash
 PYTHONPATH=. pytest tests/ -v
 ```
 
-### 7. Run Standard Docker Compose
+---
+
+### 6. Run Adversarial Exploit Tests (Anti-Gaming Proof)
 ```bash
-# Starts the store and runs the baseline agent
+PYTHONPATH=. python tests/test_exploits.py
+```
+
+---
+
+### 7. Run with Docker (Universal Across Linux, macOS, Windows)
+Docker provides a self-contained, reproducible headless environment across all operating systems without needing local Python setup:
+
+```bash
+# Build and start the store + run default baseline agent:
 docker compose up --build
+
+# Run test suite inside Docker:
+docker compose run --rm agent-eval pytest tests/ -v
+
+# Run exploit verification inside Docker:
+docker compose run --rm agent-eval python tests/test_exploits.py
+
+# Run in an already running container:
+docker exec -it shopping-rl-eval python tests/test_exploits.py
 ```
 
 ---

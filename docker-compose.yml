@@ -19,11 +19,8 @@ services:
     environment:
       - PYTHONPATH=/app
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - DISPLAY=${DISPLAY}
       - STORE_URL=http://shopping-store:5000
     volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix
       - ./store/orders.json:/app/store/orders.json
       - ./reports/runs:/app/reports/runs
-    ipc: host
     command: ["python", "agents/scripted_agent.py"]
