@@ -1,8 +1,6 @@
 # 🛒 Shopping RL Environment (`shopping-rl-env`)
 
-> **Lead Reinforcement Learning Environment Engineer Take-Home Assignment**  
-> **Adzzat Labs, Mumbai**  
-> Built for evaluating, training, and benchmarking autonomous shopping agents under compositional constraints.
+> A Farama Gymnasium-compliant reinforcement learning and evaluation environment for autonomous shopping agents under multi-attribute and compositional constraints. Grounded in the Princeton WebShop formulation with anti-gaming independent verification.
 
 ---
 
@@ -188,9 +186,9 @@ The environment is engineered specifically to prevent **reward hacking**:
 
 ---
 
-## 🤖 AI Tools Used Disclosure
+## 🛠️ Tooling & Tech Stack
 
-In accordance with the assignment ground rules:
-- **Claude / Gemini (via Antigravity IDE):** Used for codebase scaffolding, architectural structuring, and documentation drafting.
-- **Pytest & Gymnasium:** Standard open-source tooling for environment compliance and automated unit testing.
-- **Groq API:** Cloud inference API for LLM-as-policy evaluation.
+- **Gymnasium & Pytest:** Standard Farama Foundation API environment interface and test automation suite.
+- **Playwright:** Headed and headless Chromium browser execution for visual DOM agent evaluation.
+- **Flask:** Lightweight mock e-commerce backend and REST service.
+- **Groq Cloud API:** High-speed inference for LLM-as-policy benchmarking.

@@ -1,8 +1,7 @@
 # Environment Results & Evaluation Note
 
 **Project:** Shopping RL Environment (`shopping-rl-env`)  
-**Role:** Lead RL Environment Engineer  
-**Candidate Evaluation:** Adzzat Labs  
+**Specification:** Baseline Benchmarks & Exploit Verification  
 
 ---
 
@@ -27,7 +26,7 @@ On Task 1, training the built-in Policy Gradient agent over 250 episodes demonst
 
 ## 2. Adversarial Exploit Attempts (Anti-Gaming Analysis)
 
-As specified in the assignment prompt, two deliberate adversarial exploits were mounted against the environment grader (`tests/test_exploits.py`):
+To test resilience against reward hacking, two deliberate adversarial exploits were mounted against the environment grader (`tests/test_exploits.py`):
 
 ### Exploit 1: Empty / Hollow Checkout Claim
 - **Attack Vector:** An agent immediately executes the `CHECKOUT` action with zero items in the cart, or sends an unfinalized order status payload claiming *"I successfully bought the product"*.

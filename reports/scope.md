@@ -1,8 +1,7 @@
 # Environment Scope Note: Multi-Constraint E-Commerce Shopping RL Environment
 
 **Project:** Shopping RL Environment (`shopping-rl-env`)  
-**Role:** Lead RL Environment Engineer  
-**Candidate Evaluation:** Adzzat Labs  
+**Specification:** Architecture & Scope Definition  
 
 ---
 
