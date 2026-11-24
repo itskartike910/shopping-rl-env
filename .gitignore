@@ -1,0 +1,37 @@
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Python bytecode & caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Environment variables & API keys
+.env
+.env.local
+*.env
+
+# Local orders generated during runs (keep template clean)
+# store/orders.json
+
+# Model checkpoints & logs
+models/*.zip
+*.log
+
+# Playwright downloads & traces
+test-results/
+playwright-report/
+.cache/
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
