@@ -1,0 +1,75 @@
+{% extends "layout.html" %}
+
+{% block content %}
+<div style="margin-bottom: 2rem;">
+  <!-- Search and Sort Controls -->
+  <form action="/" method="GET" style="display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.5rem;">
+    <input type="text" name="q" value="{{ query }}" placeholder="Search by name, specs, socket (e.g. LGA1700), tags..." 
+           style="flex: 1; min-width: 280px; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 0.5rem; font-size: 1rem;" id="search-input">
+    
+    <select name="sort_by" onchange="this.form.submit()" 
+            style="padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 0.5rem; background: white; font-size: 0.875rem;" id="sort-select">
+      <option value="default" {% if sort_by == 'default' %}selected{% endif %}>Sort: Featured</option>
+      <option value="price_asc" {% if sort_by == 'price_asc' %}selected{% endif %}>Price: Low to High</option>
+      <option value="price_desc" {% if sort_by == 'price_desc' %}selected{% endif %}>Price: High to Low</option>
+      <option value="rating" {% if sort_by == 'rating' %}selected{% endif %}>Highest Rated</option>
+      <option value="name" {% if sort_by == 'name' %}selected{% endif %}>Name (A-Z)</option>
+    </select>
+
+    <button type="submit" class="btn btn-primary" id="search-btn">Search</button>
+  </form>
+
+  <!-- Category Filter Pills -->
+  <div style="display: flex; gap: 0.5rem; overflow-x: auto; padding-bottom: 0.5rem; margin-bottom: 1.5rem;">
+    <a href="/?sort_by={{ sort_by }}" class="badge {% if not current_category %}badge-blue{% else %}badge-amber{% endif %}" style="text-decoration: none; padding: 0.4rem 0.8rem; font-size: 0.85rem;">All Categories</a>
+    {% for cat in categories %}
+      <a href="/?category={{ cat }}&sort_by={{ sort_by }}" 
+         class="badge {% if current_category == cat %}badge-blue{% else %}badge-amber{% endif %}" 
+         style="text-decoration: none; padding: 0.4rem 0.8rem; font-size: 0.85rem;">{{ cat }}</a>
+    {% endfor %}
+  </div>
+
+  <div style="margin-bottom: 1rem; color: var(--text-muted); font-size: 0.875rem;">
+    Showing <strong>{{ products|length }}</strong> products
+  </div>
+
+  <!-- Products Grid -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem;" id="products-grid">
+    {% for p in products %}
+    <div style="background: white; border: 1px solid var(--border); border-radius: 0.5rem; padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; transition: box-shadow 0.2s;" class="product-card" data-product-id="{{ p.id }}">
+      <div>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.5rem;">
+          <span class="badge badge-blue">{{ p.category }}</span>
+          <span style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted);">{{ p.id }}</span>
+        </div>
+        <h3 style="font-size: 1rem; margin-bottom: 0.5rem; line-height: 1.3;">
+          <a href="/product/{{ p.id }}" style="color: var(--text); text-decoration: none;" class="product-title">{{ p.name }}</a>
+        </h3>
+        
+        <!-- Specs Badges -->
+        <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.75rem;">
+          {% if p.socket %}<span class="badge badge-amber">Socket: {{ p.socket }}</span>{% endif %}
+          {% if p.ram_gb %}<span class="badge badge-amber">{{ p.ram_gb }}GB {{ p.ram_type or '' }}</span>{% endif %}
+          {% if p.storage_gb %}<span class="badge badge-amber">{{ p.storage_gb }}GB</span>{% endif %}
+          {% if p.connectivity != 'N/A' %}<span class="badge badge-green">{{ p.connectivity }}</span>{% endif %}
+          {% if p.type %}<span class="badge badge-green">{{ p.type }}</span>{% endif %}
+        </div>
+      </div>
+
+      <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
+        <div>
+          <div style="font-size: 1.25rem; font-weight: 800; color: var(--text);" class="product-price">₹{{ "{:,}".format(p.price) }}</div>
+          <div style="font-size: 0.75rem; color: var(--success);">In Stock ({{ p.stock }})</div>
+        </div>
+
+        <form action="/cart/add" method="POST" style="margin: 0;">
+          <input type="hidden" name="product_id" value="{{ p.id }}">
+          <input type="hidden" name="qty" value="1">
+          <button type="submit" class="btn btn-primary add-to-cart-btn" id="btn-add-{{ p.id }}">Add to Cart</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}
