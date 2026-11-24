@@ -1,0 +1,29 @@
+services:
+  shopping-store:
+    build: .
+    container_name: shopping-rl-store
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - PYTHONPATH=/app
+    volumes:
+      - ./store/orders.json:/app/store/orders.json
+    restart: unless-stopped
+
+  agent-eval:
+    build: .
+    container_name: shopping-rl-eval
+    depends_on:
+      - shopping-store
+    environment:
+      - PYTHONPATH=/app
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - DISPLAY=${DISPLAY}
+      - STORE_URL=http://shopping-store:5000
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - ./store/orders.json:/app/store/orders.json
+      - ./reports/runs:/app/reports/runs
+    ipc: host
+    command: ["python", "agents/scripted_agent.py"]
