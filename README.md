@@ -77,7 +77,7 @@ PYTHONPATH=. python agents/ppo_agent.py 1
 
 ---
 
-### 5. Run Full Test Suite (12 Tests)
+### 5. Run Full Test Suite (19 Tests)
 ```bash
 PYTHONPATH=. pytest tests/ -v
 ```
@@ -91,7 +91,15 @@ PYTHONPATH=. python tests/test_exploits.py
 
 ---
 
-### 7. Run with Docker (Universal Across Linux, macOS, Windows)
+### 7. Grade a Saved Store Order by ID
+Grade any persisted order in `store/orders.json` against a benchmark task using the independent grader CLI:
+```bash
+PYTHONPATH=. python -m grader.grader 1 <ORDER_ID>
+```
+
+---
+
+### 8. Run with Docker (Universal Across Linux, macOS, Windows)
 Docker provides a self-contained, reproducible headless environment across all operating systems without needing local Python setup:
 
 ```bash
@@ -121,7 +129,8 @@ This project is built from scratch with clean, modular architecture. Here is wha
   - **HTML Web Pages** (`/`, `/product/<id>`, `/cart`, `/checkout`): responsive UI for human inspection and Playwright browser agents.
   - **Key functions:**
     - `filter_and_sort_products()`: filters by search term, category, price bounds, and sorts by price asc/desc, rating, or name.
-    - `api_checkout()`: calculates real totals, assigns an order ID, and commits to `orders.json`.
+    - `_add_item_to_cart()`: validates product ID, positive quantity, and prevents cart quantities from exceeding available `stock`.
+    - `_process_checkout()` (shared by `api_checkout()` and `ui_checkout()`): validates live inventory at checkout time, rejects over-stock carts (`400`), decrements in-memory stock, calculates real totals, assigns an order ID, and commits to `orders.json`.
 - **`store/templates/`**:
   - `layout.html`: base HTML template with navigation bar, responsive CSS styling, and live cart item counter.
   - `index.html`: store front page with search bar, sort dropdown, category filter pills, and product cards with "Add to Cart" buttons.
@@ -150,7 +159,7 @@ This project is built from scratch with clean, modular architecture. Here is wha
 - **`grader/grader.py`**: The objective evaluation engine. Completely decoupled from the agent.
   - **`evaluate_order(order, task_constraints)`**: The core dynamic grading function.
     1. Verifies order exists on server and status is `completed`.
-    2. Recalculates total spend directly from locked `catalog.json` (completely immune to client-side price tampering).
+    2. Recalculates total spend directly from locked `catalog.json` (completely immune to client-side price tampering) and validates positive quantities against available `stock`.
     3. Checks required product IDs and categories.
     4. Evaluates attribute requirements (e.g. `connectivity == "Wireless"`, `color == "Black"`, `type == "Mechanical"`).
     5. Validates hardware compatibility: checks `CPU.socket == Motherboard.socket`.
@@ -172,17 +181,19 @@ This project is built from scratch with clean, modular architecture. Here is wha
 ### 5. Run Reporter
 - **`reports/run_reporter.py`**: Shared module called by all agents after every episode.
   - **`save_run_report(result, agent_type, model)`**: grades the episode's order, then writes two files to `reports/runs/`:
-    - `YYYY-MM-DD_HH-MM-SS_task{N}_{agent}.json` — full machine-readable record.
-    - `YYYY-MM-DD_HH-MM-SS_task{N}_{agent}.md` — human-readable Markdown summary.
-  - Each report contains: timestamp, task id/name, agent type, model, steps, total reward, real cart total (recalculated from catalog), WebShop score, pass/fail, constraint check breakdown, and order id.
+    - `YYYY-MM-DD_HH-MM-SS_task{N}_{agent}.json` — full machine-readable record including task instruction and step-by-step trajectory (`prompt`, `thought`, `raw_response`, `obs`, `next_obs`, `state`, `action`, `reward`, `cumulative_reward`).
+    - `YYYY-MM-DD_HH-MM-SS_task{N}_{agent}.md` — human-readable Markdown summary with constraint checks and step-by-step trace.
+  - Each report contains: timestamp, task id/name/instruction, agent type, model, steps, total reward, real cart total (recalculated from catalog), WebShop score, pass/fail, constraint check breakdown, order id/details, and trajectory steps.
   - The grader is called **independently** inside the reporter — the agent cannot influence the graded output.
 
 ### 6. Test Suite & Exploit Verification
-- **`tests/test_env.py`**: unit tests verifying Gymnasium API compliance, observation bounds, action processing, and episode truncation.
-- **`tests/test_grader.py`**: unit tests verifying all 5 tasks against both valid orders (must score 1.0) and invalid/over-budget orders (must fail).
-- **`tests/test_exploits.py`**: unit tests mounting two deliberate adversarial reward hacking attempts:
+- **`tests/test_env.py`**: unit tests verifying Gymnasium API compliance, observation bounds, action processing, stock limits, one-time shaping bounds, and episode truncation.
+- **`tests/test_grader.py`**: unit tests verifying all 5 tasks against valid orders, invalid/over-budget orders, and stock/quantity limits.
+- **`tests/test_store.py`**: unit tests verifying Flask REST API and HTML UI stock validation on cart additions, checkout-time inventory enforcement across concurrent sessions, and out-of-stock UI state.
+- **`tests/test_exploits.py`**: unit tests mounting three deliberate adversarial reward hacking attempts:
   - *Exploit 1:* Hollow checkout with empty cart / unconfirmed order. (Blocked: score = 0.0)
   - *Exploit 2:* Client-side cart price tampering. (Blocked: grader recalculates real prices from catalog and rejects budget breach).
+  - *Exploit 3:* Intermediate reward-shaping farming (`ADD_TO_CART` repeats and `ADD`/`REMOVE` cycles). (Blocked: one-time per-item shaping claim caps cumulative return strictly below optimal `1.74`).
 
 ---
 
@@ -224,9 +235,9 @@ The environment is engineered specifically to prevent **reward hacking**:
 
 ---
 
-## 🛠️ Tooling & Tech Stack
+## 🛠️ Tooling, AI Assistance & Data Provenance
 
-- **Gymnasium & Pytest:** Standard Farama Foundation API environment interface and test automation suite.
-- **Playwright:** Headed and headless Chromium browser execution for visual DOM agent evaluation.
-- **Flask:** Lightweight mock e-commerce backend and REST service.
-- **Groq Cloud API:** High-speed inference for LLM-as-policy benchmarking.
+- **Core Stack:** Farama Gymnasium (`gymnasium`), `pytest`, `numpy`, Playwright Chromium, and Flask.
+- **LLM Policy Inference:** Groq Cloud free-tier inference (`qwen/qwen3.8-27b`) in `agents/groq_agent.py` and `agents/browser_agent.py` (`--mode groq`).
+- **AI Coding Assistance:** Antigravity AI coding assistants were used to help scaffold store UI templates, documentation drafts, and test boilerplate; all grading logic, stock/anti-gaming defenses, bug fixes, and verification runs were reviewed and validated against `pytest` and the exploit suite.
+- **Data Provenance:** All 32 product entries in `store/catalog.json` and the 5 declarative tasks in `environment/tasks.json` are self-contained synthetic benchmark data created specifically for this environment.
