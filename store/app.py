@@ -7,7 +7,7 @@ import os
 import json
 import uuid
 from datetime import datetime
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CATALOG_PATH = os.path.join(BASE_DIR, "catalog.json")
@@ -16,13 +16,21 @@ ORDERS_PATH = os.path.join(BASE_DIR, "orders.json")
 app = Flask(__name__)
 app.secret_key = "shopping-rl-secret-key-eval-env"
 
-# Load catalog once (read-only reference)
+# Load catalog once (read-only reference on disk; runtime stock tracked in memory)
 with open(CATALOG_PATH, "r", encoding="utf-8") as f:
     CATALOG = json.load(f)
 CATALOG_BY_ID = {p["id"]: p for p in CATALOG}
+INITIAL_STOCK = {p["id"]: int(p.get("stock", 0)) for p in CATALOG}
 
 # In-memory session carts: session_id -> list of {"id": product_id, "qty": int}
 SESSION_CARTS = {}
+
+
+def reset_catalog_stock():
+    """Restore in-memory product stock levels back to catalog.json defaults."""
+    for pid, stock_val in INITIAL_STOCK.items():
+        if pid in CATALOG_BY_ID:
+            CATALOG_BY_ID[pid]["stock"] = stock_val
 
 def get_session_id():
     """Extract session ID from request headers, query args, or flask session."""
@@ -91,6 +99,130 @@ def filter_and_sort_products(query="", category="", sort_by="default", min_price
 
     return results
 
+def _build_cart_details(s_id, include_full_product=False):
+    """Build itemized cart lines and authoritative total from CATALOG_BY_ID."""
+    cart_items = SESSION_CARTS.get(s_id, [])
+    detailed = []
+    total = 0
+    for item in cart_items:
+        prod = CATALOG_BY_ID.get(item["id"])
+        if not prod:
+            continue
+        subtotal = prod["price"] * item["qty"]
+        total += subtotal
+        if include_full_product:
+            detailed.append({**prod, "qty": item["qty"], "subtotal": subtotal})
+        else:
+            detailed.append({
+                "id": prod["id"],
+                "name": prod["name"],
+                "category": prod["category"],
+                "price": prod["price"],
+                "qty": item["qty"],
+                "subtotal": subtotal,
+                "available_stock": prod.get("stock", 0),
+            })
+    item_count = sum(i["qty"] for i in cart_items)
+    return detailed, total, item_count
+
+
+def _add_item_to_cart(s_id, product_id, raw_qty=1):
+    """Validate product, positive qty, and available stock before updating session cart."""
+    pid = str(product_id or "").upper().strip()
+    try:
+        qty = int(raw_qty)
+    except (TypeError, ValueError):
+        return False, "Quantity must be a valid integer", 400
+
+    if pid not in CATALOG_BY_ID:
+        return False, f"Invalid product_id: {pid}", 400
+    if qty <= 0:
+        return False, "Quantity must be positive", 400
+
+    prod = CATALOG_BY_ID[pid]
+    available_stock = int(prod.get("stock", 0))
+    cart = SESSION_CARTS.setdefault(s_id, [])
+    existing = next((item for item in cart if item["id"] == pid), None)
+    existing_qty = existing["qty"] if existing else 0
+    new_qty = existing_qty + qty
+
+    if available_stock <= 0:
+        return False, f"{prod['name']} ({pid}) is out of stock", 400
+    if new_qty > available_stock:
+        return (
+            False,
+            f"Cannot add {qty} more of {prod['name']} ({pid}): requested total {new_qty} exceeds available stock ({available_stock}).",
+            400,
+        )
+
+    if existing:
+        existing["qty"] = new_qty
+    else:
+        cart.append({"id": pid, "qty": qty})
+    return True, f"Added {pid} to cart", 200
+
+
+def _process_checkout(s_id):
+    """Validate cart & live stock at checkout time, decrement stock, and persist order."""
+    cart_items = SESSION_CARTS.get(s_id, [])
+    if not cart_items:
+        return None, "Cannot checkout with empty cart", 400
+
+    stock_errors = []
+    order_items = []
+    total = 0
+
+    for item in cart_items:
+        pid = item.get("id")
+        qty = int(item.get("qty", 0))
+        prod = CATALOG_BY_ID.get(pid)
+        if not prod:
+            stock_errors.append(f"Unknown product {pid} in cart.")
+            continue
+        available_stock = int(prod.get("stock", 0))
+        if qty <= 0:
+            stock_errors.append(f"Invalid quantity ({qty}) for {prod['name']} ({pid}).")
+            continue
+        if qty > available_stock:
+            stock_errors.append(
+                f"Insufficient stock for {prod['name']} ({pid}): ordered {qty}, available {available_stock}."
+            )
+            continue
+
+        subtotal = prod["price"] * qty
+        total += subtotal
+        order_items.append({
+            "id": prod["id"],
+            "name": prod["name"],
+            "category": prod["category"],
+            "price": prod["price"],
+            "qty": qty,
+            "subtotal": subtotal,
+        })
+
+    if stock_errors:
+        return None, " ".join(stock_errors), 400
+
+    # Deduct stock only after every cart item passes validation
+    for item in order_items:
+        CATALOG_BY_ID[item["id"]]["stock"] -= item["qty"]
+
+    order_id = f"ORD-{str(uuid.uuid4())[:8].upper()}"
+    order_data = {
+        "order_id": order_id,
+        "session_id": s_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "status": "completed",
+        "items": order_items,
+        "total": total,
+        "item_count": sum(i["qty"] for i in order_items),
+    }
+
+    save_order(order_data)
+    SESSION_CARTS[s_id] = []
+    return order_data, "Order placed successfully", 200
+
+
 # ----------------- REST API ENDPOINTS -----------------
 
 @app.route("/api/catalog", methods=["GET"])
@@ -125,27 +257,12 @@ def api_product(product_id):
 @app.route("/api/cart", methods=["GET"])
 def api_get_cart():
     s_id = get_session_id()
-    cart_items = SESSION_CARTS.get(s_id, [])
-    detailed_items = []
-    total = 0
-    for item in cart_items:
-        prod = CATALOG_BY_ID.get(item["id"])
-        if prod:
-            subtotal = prod["price"] * item["qty"]
-            total += subtotal
-            detailed_items.append({
-                "id": prod["id"],
-                "name": prod["name"],
-                "category": prod["category"],
-                "price": prod["price"],
-                "qty": item["qty"],
-                "subtotal": subtotal
-            })
+    detailed_items, total, item_count = _build_cart_details(s_id, include_full_product=False)
     return jsonify({
         "status": "success",
         "session_id": s_id,
         "items": detailed_items,
-        "item_count": sum(i["qty"] for i in cart_items),
+        "item_count": item_count,
         "total": total
     })
 
@@ -153,23 +270,10 @@ def api_get_cart():
 def api_add_to_cart():
     s_id = get_session_id()
     data = request.get_json(force=True, silent=True) or request.form
-    product_id = data.get("product_id", "").upper().strip()
-    qty = int(data.get("qty", 1))
-
-    if product_id not in CATALOG_BY_ID:
-        return jsonify({"status": "error", "message": f"Invalid product_id: {product_id}"}), 400
-    if qty <= 0:
-        return jsonify({"status": "error", "message": "Quantity must be positive"}), 400
-
-    cart = SESSION_CARTS.setdefault(s_id, [])
-    # Check if already in cart
-    existing = next((item for item in cart if item["id"] == product_id), None)
-    if existing:
-        existing["qty"] += qty
-    else:
-        cart.append({"id": product_id, "qty": qty})
-
-    return jsonify({"status": "success", "message": f"Added {product_id} to cart", "cart_size": len(cart)})
+    ok, msg, status_code = _add_item_to_cart(s_id, data.get("product_id", ""), data.get("qty", 1))
+    if not ok:
+        return jsonify({"status": "error", "message": msg}), status_code
+    return jsonify({"status": "success", "message": msg, "cart_size": len(SESSION_CARTS.get(s_id, []))})
 
 @app.route("/api/cart/remove", methods=["POST"])
 def api_remove_from_cart():
@@ -193,50 +297,17 @@ def api_clear_cart():
 @app.route("/api/checkout", methods=["POST"])
 def api_checkout():
     s_id = get_session_id()
-    cart_items = SESSION_CARTS.get(s_id, [])
-
-    if not cart_items:
+    order_data, message, status_code = _process_checkout(s_id)
+    if order_data is None:
         return jsonify({
             "status": "failed",
-            "message": "Cannot checkout with empty cart",
+            "message": message,
             "order_id": None
-        }), 400
-
-    # Calculate real authoritative total from locked CATALOG
-    order_items = []
-    total = 0
-    for item in cart_items:
-        prod = CATALOG_BY_ID.get(item["id"])
-        if prod:
-            subtotal = prod["price"] * item["qty"]
-            total += subtotal
-            order_items.append({
-                "id": prod["id"],
-                "name": prod["name"],
-                "category": prod["category"],
-                "price": prod["price"],
-                "qty": item["qty"],
-                "subtotal": subtotal
-            })
-
-    order_id = f"ORD-{str(uuid.uuid4())[:8].upper()}"
-    order_data = {
-        "order_id": order_id,
-        "session_id": s_id,
-        "timestamp": datetime.utcnow().isoformat(),
-        "status": "completed",
-        "items": order_items,
-        "total": total,
-        "item_count": sum(i["qty"] for i in order_items)
-    }
-
-    save_order(order_data)
-    # Clear cart after successful checkout
-    SESSION_CARTS[s_id] = []
+        }), status_code
 
     return jsonify({
         "status": "completed",
-        "message": "Order placed successfully",
+        "message": message,
         "order": order_data
     })
 
@@ -244,6 +315,9 @@ def api_checkout():
 def api_reset():
     s_id = get_session_id()
     SESSION_CARTS[s_id] = []
+    data = request.get_json(force=True, silent=True) or {}
+    if data.get("reset_stock"):
+        reset_catalog_stock()
     return jsonify({"status": "success", "session_id": s_id, "message": "Session reset"})
 
 @app.route("/api/orders/<order_id>", methods=["GET"])
@@ -290,29 +364,15 @@ def ui_product(product_id):
 @app.route("/cart", methods=["GET"])
 def ui_cart():
     s_id = get_session_id()
-    cart_items = SESSION_CARTS.get(s_id, [])
-    detailed = []
-    total = 0
-    for item in cart_items:
-        prod = CATALOG_BY_ID.get(item["id"])
-        if prod:
-            subtotal = prod["price"] * item["qty"]
-            total += subtotal
-            detailed.append({**prod, "qty": item["qty"], "subtotal": subtotal})
+    detailed, total, _ = _build_cart_details(s_id, include_full_product=True)
     return render_template("cart.html", items=detailed, total=total, session_id=s_id)
 
 @app.route("/cart/add", methods=["POST"])
 def ui_cart_add():
     s_id = get_session_id()
-    pid = request.form.get("product_id", "").upper().strip()
-    qty = int(request.form.get("qty", 1))
-    if pid in CATALOG_BY_ID and qty > 0:
-        cart = SESSION_CARTS.setdefault(s_id, [])
-        item = next((i for i in cart if i["id"] == pid), None)
-        if item:
-            item["qty"] += qty
-        else:
-            cart.append({"id": pid, "qty": qty})
+    ok, msg, _ = _add_item_to_cart(s_id, request.form.get("product_id", ""), request.form.get("qty", 1))
+    if not ok:
+        flash(msg, "error")
     return redirect(request.referrer or url_for("ui_cart"))
 
 @app.route("/cart/remove", methods=["POST"])
@@ -325,39 +385,13 @@ def ui_cart_remove():
 @app.route("/checkout", methods=["POST"])
 def ui_checkout():
     s_id = get_session_id()
-    cart_items = SESSION_CARTS.get(s_id, [])
-    if not cart_items:
-        return redirect(url_for("ui_cart"))
-
-    order_items = []
-    total = 0
-    for item in cart_items:
-        prod = CATALOG_BY_ID.get(item["id"])
-        if prod:
-            subtotal = prod["price"] * item["qty"]
-            total += subtotal
-            order_items.append({
-                "id": prod["id"],
-                "name": prod["name"],
-                "category": prod["category"],
-                "price": prod["price"],
-                "qty": item["qty"],
-                "subtotal": subtotal
-            })
-
-    order_id = f"ORD-{str(uuid.uuid4())[:8].upper()}"
-    order_data = {
-        "order_id": order_id,
-        "session_id": s_id,
-        "timestamp": datetime.utcnow().isoformat(),
-        "status": "completed",
-        "items": order_items,
-        "total": total,
-        "item_count": sum(i["qty"] for i in order_items)
-    }
-    save_order(order_data)
-    SESSION_CARTS[s_id] = []
-    return redirect(url_for("ui_checkout_success", order_id=order_id))
+    order_data, message, status_code = _process_checkout(s_id)
+    if order_data is None:
+        if not SESSION_CARTS.get(s_id):
+            return redirect(url_for("ui_cart"))
+        detailed, total, _ = _build_cart_details(s_id, include_full_product=True)
+        return render_template("cart.html", items=detailed, total=total, session_id=s_id, error=message), status_code
+    return redirect(url_for("ui_checkout_success", order_id=order_data["order_id"]))
 
 @app.route("/checkout-success/<order_id>", methods=["GET"])
 def ui_checkout_success(order_id):

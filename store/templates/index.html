@@ -59,13 +59,19 @@
       <div style="border-top: 1px solid var(--border); padding-top: 1rem; margin-top: 1rem; display: flex; justify-content: space-between; align-items: center;">
         <div>
           <div style="font-size: 1.25rem; font-weight: 800; color: var(--text);" class="product-price">₹{{ "{:,}".format(p.price) }}</div>
+          {% if p.stock > 0 %}
           <div style="font-size: 0.75rem; color: var(--success);">In Stock ({{ p.stock }})</div>
+          {% else %}
+          <div style="font-size: 0.75rem; color: var(--danger); font-weight: 600;">Out of Stock</div>
+          {% endif %}
         </div>
 
         <form action="/cart/add" method="POST" style="margin: 0;">
           <input type="hidden" name="product_id" value="{{ p.id }}">
           <input type="hidden" name="qty" value="1">
-          <button type="submit" class="btn btn-primary add-to-cart-btn" id="btn-add-{{ p.id }}">Add to Cart</button>
+          <button type="submit" class="btn btn-primary add-to-cart-btn" id="btn-add-{{ p.id }}" {% if p.stock <= 0 %}disabled style="opacity: 0.5; cursor: not-allowed;"{% endif %}>
+            {% if p.stock > 0 %}Add to Cart{% else %}Out of Stock{% endif %}
+          </button>
         </form>
       </div>
     </div>

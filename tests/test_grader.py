@@ -93,7 +93,7 @@ def test_task_4_socket_compatibility(tasks):
     assert res_incomp["checks"]["socket_compatibility"] is False
 
 def test_task_5_full_gaming_pc(tasks):
-    # Task 5: 10 PC categories under ₹110,000
+    # Task 5: 10 PC categories under ₹115,000
     task5 = tasks[5]
     valid_pc_order = {
         "status": "completed",
@@ -108,9 +108,32 @@ def test_task_5_full_gaming_pc(tasks):
             {"id": "MON-01", "qty": 1}, # 14,999
             {"id": "KEY-02", "qty": 1}, #  2,799
             {"id": "MOU-01", "qty": 1}  #  2,999
-            # Total = ₹109,090 (< ₹110,000)
+            # Total = ₹110,090 (< ₹115,000)
         ]
     }
     res = evaluate_order(valid_pc_order, task5["constraints"])
     assert res["passed"] is True
     assert res["real_total"] == 110090
+
+
+def test_grader_blocks_exceeding_stock_and_invalid_qty(tasks):
+    """Orders requesting qty > stock or qty <= 0 must fail independent grading."""
+    task1 = tasks[1]
+
+    # BOT-01 has stock=25; requesting 26 (or split across two lines) must fail
+    over_stock_order = {
+        "status": "completed",
+        "items": [{"id": "BOT-01", "qty": 15}, {"id": "BOT-01", "qty": 11}]
+    }
+    res_over = evaluate_order(over_stock_order, task1["constraints"])
+    assert res_over["passed"] is False
+    assert res_over["checks"]["stock_availability"] is False
+    assert "Insufficient stock" in res_over["reason"]
+
+    invalid_qty_order = {
+        "status": "completed",
+        "items": [{"id": "BOT-01", "qty": 0}]
+    }
+    res_zero = evaluate_order(invalid_qty_order, task1["constraints"])
+    assert res_zero["passed"] is False
+    assert res_zero["webshop_score"] == 0.0

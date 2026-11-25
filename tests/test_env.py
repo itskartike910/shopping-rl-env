@@ -47,3 +47,40 @@ def test_env_step_limits():
     obs, reward, terminated, truncated, info = env.step((0, 0))
     assert truncated is True
     assert terminated is False
+
+
+def test_env_stock_limit_enforced():
+    """MB-01 has stock=5; a 6th ADD_TO_CART must be rejected."""
+    env = ShoppingEnv(task_id=4, max_steps=20)
+    env.reset()
+    for _ in range(5):
+        obs, reward, terminated, truncated, info = env.step({"action": "ADD_TO_CART", "param": "MB-01"})
+        assert obs[-1] == 1.0
+
+    obs, reward, terminated, truncated, info = env.step({"action": "ADD_TO_CART", "param": "MB-01"})
+    assert obs[-1] == 0.0
+    assert info["cart"][0]["qty"] == 5
+
+
+def test_env_shaping_reward_not_farmable():
+    """Repeated ADD_TO_CART or ADD/REMOVE cycles cannot claim shaping bonus more than once."""
+    env = ShoppingEnv(task_id=1, max_steps=15)
+    env.reset()
+
+    # First add of BOT-01 earns +0.25 - 0.01 = +0.24
+    _, r1, _, _, _ = env.step({"action": "ADD_TO_CART", "param": "BOT-01"})
+    assert round(r1, 4) == 0.24
+
+    # Remove then re-add BOT-01 must NOT re-grant +0.25
+    _, r_rem, _, _, _ = env.step({"action": "REMOVE_FROM_CART", "param": "BOT-01"})
+    assert round(r_rem, 4) == -0.01
+
+    _, r2, _, _, _ = env.step({"action": "ADD_TO_CART", "param": "BOT-01"})
+    assert round(r2, 4) == -0.01
+
+    # Optimal 2-step checkout stays 1.74; cycled trajectory must stay strictly lower
+    _, r_chk, terminated, _, _ = env.step({"action": "CHECKOUT", "param": 0})
+    assert terminated is True
+    total = r1 + r_rem + r2 + r_chk
+    assert round(total, 4) == 1.72
+    assert total < 1.74

@@ -59,6 +59,15 @@
   </header>
 
   <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+        <div id="flash-alert" style="margin-bottom: 1.25rem; padding: 0.875rem 1rem; border-radius: 0.5rem; font-weight: 600; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;">
+          {{ message }}
+        </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
     {% block content %}{% endblock %}
   </main>
 

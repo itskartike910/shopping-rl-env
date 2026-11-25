@@ -4,6 +4,12 @@
 <div style="max-width: 900px; margin: 0 auto;">
   <h1 style="margin-bottom: 1.5rem;">Shopping Cart</h1>
 
+  {% if error %}
+  <div id="checkout-error" style="margin-bottom: 1.25rem; padding: 0.875rem 1rem; border-radius: 0.5rem; font-weight: 600; background: #fee2e2; color: #991b1b; border: 1px solid #fecaca;">
+    {{ error }}
+  </div>
+  {% endif %}
+
   {% if not items %}
   <div style="background: white; border: 1px solid var(--border); border-radius: 0.5rem; padding: 3rem; text-align: center;">
     <p style="color: var(--text-muted); font-size: 1.1rem; margin-bottom: 1.5rem;">Your cart is currently empty.</p>
@@ -31,7 +37,12 @@
           </td>
           <td style="padding: 1rem 0;"><span class="badge badge-blue">{{ item.category }}</span></td>
           <td style="padding: 1rem 0;">₹{{ "{:,}".format(item.price) }}</td>
-          <td style="padding: 1rem 0;">{{ item.qty }}</td>
+          <td style="padding: 1rem 0;">
+            <div>{{ item.qty }}</div>
+            <div style="font-size: 0.75rem; color: {% if item.qty > item.stock %}var(--danger); font-weight: 600{% else %}var(--text-muted){% endif %};">
+              Available: {{ item.stock }}
+            </div>
+          </td>
           <td style="padding: 1rem 0; font-weight: 700;">₹{{ "{:,}".format(item.subtotal) }}</td>
           <td style="padding: 1rem 0;">
             <form action="/cart/remove" method="POST" style="margin: 0;">

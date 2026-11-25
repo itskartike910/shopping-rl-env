@@ -76,12 +76,21 @@ def evaluate_order(order: Dict[str, Any], task_constraints: Dict[str, Any]) -> D
             "reason": "Order status is not 'completed' or items list is empty"
         }
 
-    # 2. Recalculate Authoritative Total from Locked Catalog (Anti-Tampering)
+    # 2. Recalculate Authoritative Total & Validate Stock from Locked Catalog (Anti-Tampering)
     real_total = 0
     validated_items = []
+    qty_by_pid = {}
     for item in order["items"]:
         pid = item.get("id")
         qty = item.get("qty", 1)
+        if not isinstance(qty, int) or isinstance(qty, bool) or qty <= 0:
+            return {
+                "passed": False,
+                "webshop_score": 0.0,
+                "real_total": real_total,
+                "checks": {"valid_quantities": False},
+                "reason": f"Invalid quantity {qty} for product ID: {pid}"
+            }
         if pid not in catalog_by_id:
             return {
                 "passed": False,
@@ -91,15 +100,26 @@ def evaluate_order(order: Dict[str, Any], task_constraints: Dict[str, Any]) -> D
                 "reason": f"Order contains unknown product ID: {pid}"
             }
         prod = catalog_by_id[pid]
+        qty_by_pid[pid] = qty_by_pid.get(pid, 0) + qty
         real_total += prod["price"] * qty
         validated_items.append({"product": prod, "qty": qty})
+
+    stock_errors = []
+    for pid, total_pid_qty in qty_by_pid.items():
+        available_stock = int(catalog_by_id[pid].get("stock", 0))
+        if total_pid_qty > available_stock:
+            stock_errors.append(
+                f"Insufficient stock for {pid}: ordered {total_pid_qty}, available {available_stock}"
+            )
 
     checks = {
         "order_exists": True,
         "order_completed": True,
-        "catalog_integrity": True
+        "valid_quantities": True,
+        "catalog_integrity": True,
+        "stock_availability": len(stock_errors) == 0
     }
-    reasons = []
+    reasons = list(stock_errors)
     points_earned = 0
     total_points = 0
 

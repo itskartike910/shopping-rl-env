@@ -103,6 +103,7 @@ class ShoppingEnv(gym.Env):
         self.visible_products = []
         self.last_order = None
         self.last_action_valid = True
+        self.shaping_claimed = set()
 
     def reset(self, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None) -> Tuple[np.ndarray, Dict[str, Any]]:
         super().reset(seed=seed)
@@ -124,6 +125,7 @@ class ShoppingEnv(gym.Env):
         self.visible_products = self.catalog_list[:10]
         self.last_order = None
         self.last_action_valid = True
+        self.shaping_claimed = set()
 
         obs = self._get_numeric_obs()
         info = self._get_info()
@@ -172,18 +174,31 @@ class ShoppingEnv(gym.Env):
             if param < len(self.catalog_list):
                 prod = self.catalog_list[param]
                 existing = next((i for i in self.cart if i["id"] == prod["id"]), None)
-                if existing:
-                    existing["qty"] += 1
-                else:
-                    self.cart.append({"id": prod["id"], "qty": 1})
+                current_qty = existing["qty"] if existing else 0
+                available_stock = int(prod.get("stock", 0))
 
-                # WebShop attribute-grounded intermediate reward shaping
-                req_pids = self.task.get("constraints", {}).get("required_product_ids", [])
-                req_cats = self.task.get("constraints", {}).get("required_categories", [])
-                if req_pids and prod["id"] in req_pids:
-                    reward += 0.25
-                elif req_cats and prod["category"] in req_cats:
-                    reward += 0.1
+                if current_qty + 1 > available_stock:
+                    self.last_action_valid = False
+                    reward -= 0.05
+                else:
+                    if existing:
+                        existing["qty"] += 1
+                    else:
+                        self.cart.append({"id": prod["id"], "qty": 1})
+
+                    # One-time WebShop attribute-grounded intermediate reward shaping per item/category
+                    req_pids = self.task.get("constraints", {}).get("required_product_ids", [])
+                    req_cats = self.task.get("constraints", {}).get("required_categories", [])
+                    if req_pids and prod["id"] in req_pids:
+                        key = ("pid", prod["id"])
+                        if key not in self.shaping_claimed:
+                            reward += 0.25
+                            self.shaping_claimed.add(key)
+                    elif req_cats and prod["category"] in req_cats:
+                        key = ("cat", prod["category"])
+                        if key not in self.shaping_claimed:
+                            reward += 0.1
+                            self.shaping_claimed.add(key)
             else:
                 self.last_action_valid = False
                 reward -= 0.05
