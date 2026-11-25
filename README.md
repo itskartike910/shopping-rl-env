@@ -4,20 +4,67 @@
 
 ---
 
-## ⚡ Quickstart
+## ⚡ Quickstart — Two Ways to Run
 
-### 1. Setup Virtual Environment (Linux, macOS & Windows)
+You can run the environment either **with Docker** (fastest, zero local Python setup) or **locally via `venv`** (needed if you want to watch Chromium run visually with `--headed`).
 
-#### On Linux / macOS:
+---
+
+### Option A: Run with Docker (Recommended — Linux, macOS, Windows)
+Docker provides a self-contained, reproducible headless environment across all operating systems without local Python or Playwright setup:
+
 ```bash
-cd shopping-rl-env
+# Optional: only needed if running Groq LLM agents
+cp .env.example .env   # then add your free-tier GROQ_API_KEY
+
+# 1. Build and start the store + run baseline agent on all 5 tasks:
+docker compose up --build
+
+# 2. Run the full test suite (19 tests) inside Docker:
+docker compose run --rm agent-eval pytest tests/ -v
+
+# 3. Run adversarial exploit verification inside Docker:
+docker compose run --rm agent-eval python tests/test_exploits.py
+
+# Or run inside an already running container:
+docker exec -it shopping-rl-eval python tests/test_exploits.py
+
+# 4. Run Policy Gradient or Groq LLM agent inside Docker:
+docker compose run --rm agent-eval python agents/ppo_agent.py 1
+docker compose run --rm agent-eval python agents/groq_agent.py 1 qwen/qwen3.8-27b
+
+# 5. Grade a saved store order by ID:
+docker compose run --rm agent-eval python -m grader.grader 1 <ORDER_ID>
+```
+
+---
+
+### Option B: Run Locally with Python `venv` (Required for `--headed` Browser Display)
+
+#### 1. Setup Virtual Environment & Optional `.env` (Linux, macOS & Windows)
+
+##### On Linux / macOS:
+```bash
+# Skip `cd shopping-rl-env` if you are already inside the repo root
 python3 -m venv .venv
-source .venv/bin/activate
+
+# Activate venv (choose your shell):
+source .venv/bin/activate        # Bash / Zsh
+source .venv/bin/activate.fish   # Fish shell
+
 pip install -r requirements.txt
 playwright install chromium
 ```
 
-#### On Windows (PowerShell):
+> **Tip (Any shell, no activation required):** Commands below use `./.venv/bin/python3` directly on Linux/macOS so they work out of the box in Bash, Zsh, and Fish even without activating `.venv` (once activated — or on Windows — you can use `python` and `pytest` instead).
+
+##### Optional (only needed for `--mode groq` / `agents/groq_agent.py`):
+```bash
+cp .env.example .env
+# Edit .env and add your free-tier GROQ_API_KEY
+```
+
+##### On Windows (PowerShell):
 ```powershell
 cd shopping-rl-env
 python -m venv .venv
@@ -27,7 +74,7 @@ playwright install chromium
 $env:PYTHONPATH="."
 ```
 
-#### On Windows (Command Prompt / CMD):
+##### On Windows (Command Prompt / CMD):
 ```cmd
 cd shopping-rl-env
 python -m venv .venv
@@ -37,83 +84,52 @@ playwright install chromium
 set PYTHONPATH=.
 ```
 
----
-
-### 2. Run Baseline Agent (All 5 Tasks)
+#### 2. Run Baseline Agent (All 5 Tasks)
 Evaluates the deterministic baseline policy across all 5 benchmark tasks and auto-saves run reports:
 ```bash
-PYTHONPATH=. python agents/scripted_agent.py
+PYTHONPATH=. ./.venv/bin/python3 agents/scripted_agent.py
 ```
 *(On Windows CMD: `set PYTHONPATH=. && python agents/scripted_agent.py`)*
 
----
-
-### 3. Run Headed Chromium Browser Agent (Native Host Display)
+#### 3. Run Headed Chromium Browser Agent (Native Host Display)
 > **Note:** Because Docker runs in a headless container without direct display access on macOS and Windows, visual browser execution runs natively on your host OS:
 
 ```bash
 # 1. Run Scripted Agent in visible Chromium (Task 1)
-PYTHONPATH=. python agents/browser_agent.py --task 1 --mode scripted --headed
+PYTHONPATH=. ./.venv/bin/python3 agents/browser_agent.py --task 1 --mode scripted --headed
 
 # 2. Run Scripted Agent on Task 2 (Constrained Wireless Mouse)
-PYTHONPATH=. python agents/browser_agent.py --task 2 --mode scripted --headed
+PYTHONPATH=. ./.venv/bin/python3 agents/browser_agent.py --task 2 --mode scripted --headed
 
 # 3. Run Groq LLM Agent in visible Chromium (AI reads screen & drives browser)
-PYTHONPATH=. python agents/browser_agent.py --task 1 --mode groq --headed
+PYTHONPATH=. ./.venv/bin/python3 agents/browser_agent.py --task 1 --mode groq --headed
 
 # (Omit --headed to run in headless background mode)
 ```
 
----
-
-### 4. Run Fast Headless RL Training & Evaluation
+#### 4. Run Fast Headless RL Training & Evaluation
 ```bash
 # Groq LLM in Gymnasium environment
-PYTHONPATH=. python agents/groq_agent.py 1 qwen/qwen3.8-27b
+PYTHONPATH=. ./.venv/bin/python3 agents/groq_agent.py 1 qwen/qwen3.8-27b
 
 # Pure NumPy Policy Gradient RL trainer
-PYTHONPATH=. python agents/ppo_agent.py 1
+PYTHONPATH=. ./.venv/bin/python3 agents/ppo_agent.py 1
 ```
 
----
-
-### 5. Run Full Test Suite (19 Tests)
+#### 5. Run Full Test Suite (19 Tests)
 ```bash
-PYTHONPATH=. pytest tests/ -v
+PYTHONPATH=. ./.venv/bin/python3 -m pytest tests/ -v
 ```
 
----
-
-### 6. Run Adversarial Exploit Tests (Anti-Gaming Proof)
+#### 6. Run Adversarial Exploit Tests (Anti-Gaming Proof)
 ```bash
-PYTHONPATH=. python tests/test_exploits.py
+PYTHONPATH=. ./.venv/bin/python3 tests/test_exploits.py
 ```
 
----
-
-### 7. Grade a Saved Store Order by ID
+#### 7. Grade a Saved Store Order by ID
 Grade any persisted order in `store/orders.json` against a benchmark task using the independent grader CLI:
 ```bash
-PYTHONPATH=. python -m grader.grader 1 <ORDER_ID>
-```
-
----
-
-### 8. Run with Docker (Universal Across Linux, macOS, Windows)
-Docker provides a self-contained, reproducible headless environment across all operating systems without needing local Python setup:
-
-```bash
-# Build and start the store + run default baseline agent:
-docker compose up --build
-
-# Run test suite inside Docker:
-docker compose run --rm agent-eval pytest tests/ -v
-
-# Run exploit verification inside Docker:
-docker compose run --rm agent-eval python tests/test_exploits.py
-
-# Run in an already running container:
-docker exec -it shopping-rl-eval python tests/test_exploits.py
+PYTHONPATH=. ./.venv/bin/python3 -m grader.grader 1 <ORDER_ID>
 ```
 
 ---
