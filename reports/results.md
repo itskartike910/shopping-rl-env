@@ -33,7 +33,7 @@ Deterministic rule-based baseline run across all 5 tasks (post-fix verified outp
 
 ## 2. Adversarial Exploit Attempts (Anti-Gaming Analysis)
 
-To verify resilience against reward hacking, three deliberate adversarial exploit suites (`tests/test_exploits.py`) plus stock/quantity checks (`tests/test_grader.py`, `tests/test_store.py`) were executed (**19/19 pytest tests passed**):
+To verify resilience against reward hacking, three deliberate adversarial exploit suites (`tests/test_exploits.py`) plus stock/quantity checks (`tests/test_grader.py`, `tests/test_store.py`) were executed (**20/20 pytest tests passed**):
 
 ### Exploit 1: Empty / Hollow Checkout Claim
 - **Attack Vector:** An agent executes `CHECKOUT` with `items: []` (or `status: "not_placed"`), claiming completion without ordering.

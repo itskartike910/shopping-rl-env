@@ -104,3 +104,47 @@ def test_ui_checkout_blocks_overstock_and_marks_out_of_stock(client):
     blocked = client.post("/checkout")
     assert blocked.status_code == 400
     assert b"Insufficient stock" in blocked.data
+
+
+def test_browser_finish_run_fetches_order_from_store_api(monkeypatch, tmp_path):
+    """BrowserShoppingAgent._finish_run should resolve orders via /api/orders/<id> even if local orders.json is empty."""
+    import io
+    import json
+    import agents.browser_agent as browser_mod
+    import grader.grader as grader_mod
+    import reports.run_reporter as reporter_mod
+
+    # Ensure local orders.json lookup has nothing
+    empty_orders = tmp_path / "orders.json"
+    empty_orders.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(grader_mod, "ORDERS_PATH", str(empty_orders))
+    monkeypatch.setattr(reporter_mod, "RUNS_DIR", str(tmp_path / "runs"))
+
+    api_payload = {
+        "status": "success",
+        "order": {
+            "order_id": "ORD-REMOTE1",
+            "status": "completed",
+            "items": [{"id": "BOT-01", "price": 599, "qty": 1}],
+            "total": 599,
+        },
+    }
+
+    class _FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    import urllib.request
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda url, timeout=2.0: _FakeResp(json.dumps(api_payload).encode("utf-8")),
+    )
+
+    ag = browser_mod.BrowserShoppingAgent(task_id=1, mode="scripted", base_url="http://127.0.0.1:5000")
+    res = ag._finish_run("ORD-REMOTE1", steps=3, agent_type="scripted_browser")
+    assert res["total_reward"] == 1.5
+    assert res["order"]["order_id"] == "ORD-REMOTE1"

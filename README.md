@@ -20,14 +20,14 @@ cp .env.example .env   # then add your free-tier GROQ_API_KEY
 # 1. Build and start the store + run baseline agent on all 5 tasks:
 docker compose up --build
 
-# 2. Run the full test suite (19 tests) inside Docker:
+# 2. Run the full test suite (20 tests) inside Docker:
 docker compose run --rm agent-eval pytest tests/ -v
 
 # 3. Run adversarial exploit verification inside Docker:
 docker compose run --rm agent-eval python tests/test_exploits.py
 
-# Or run inside an already running container:
-docker exec -it shopping-rl-eval python tests/test_exploits.py
+# Or run inside the running store container:
+docker exec -it shopping-rl-store python tests/test_exploits.py
 
 # 4. Run Policy Gradient or Groq LLM agent inside Docker:
 docker compose run --rm agent-eval python agents/ppo_agent.py 1
@@ -116,7 +116,7 @@ PYTHONPATH=. ./.venv/bin/python3 agents/groq_agent.py 1 qwen/qwen3.8-27b
 PYTHONPATH=. ./.venv/bin/python3 agents/ppo_agent.py 1
 ```
 
-#### 5. Run Full Test Suite (19 Tests)
+#### 5. Run Full Test Suite (20 Tests)
 ```bash
 PYTHONPATH=. ./.venv/bin/python3 -m pytest tests/ -v
 ```

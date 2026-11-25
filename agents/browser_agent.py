@@ -391,9 +391,20 @@ INSTRUCTIONS & RULES:
         """Grade order and save run report."""
         order_dict = None
         if order_id:
-            # Read order from store/orders.json
-            from grader.grader import load_order_by_id
-            order_dict = load_order_by_id(order_id)
+            # Query the active store API first (handles Docker/remote stores or decoupled mounts),
+            # then fall back to local store/orders.json on disk.
+            try:
+                import urllib.request
+                with urllib.request.urlopen(f"{self.base_url}/api/orders/{order_id}", timeout=2.0) as resp:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                    if payload.get("status") == "success":
+                        order_dict = payload.get("order")
+            except Exception:
+                order_dict = None
+
+            if order_dict is None:
+                from grader.grader import load_order_by_id
+                order_dict = load_order_by_id(order_id)
 
         constraints = self.task_def.get("constraints", {})
         eval_result = evaluate_order(order_dict, constraints)
