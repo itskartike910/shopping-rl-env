@@ -21,31 +21,49 @@ class ScriptedShoppingAgent:
 
     def run_episode(self, env: ShoppingEnv) -> dict:
         obs, info = env.reset(options={"task_id": self.task_id})
+        instruction = info.get("instruction", "")
         trajectory = []
         total_reward = 0.0
         done = False
 
         while not done:
-            action = self.select_action(env)
-            trajectory.append({
-                "step": env.steps_taken + 1,
-                "action": action,
+            state_before = {
                 "page": env.current_page,
-                "cart_size": len(env.cart)
-            })
+                "cart": [dict(c) for c in env.cart],
+                "cart_total": info.get("cart_total", 0),
+                "budget_remaining": info.get("budget_remaining", 0),
+                "visible_product_ids": [p["id"] for p in info.get("visible_products", [])],
+            }
+            obs_before = [round(float(x), 4) for x in obs.tolist()]
+            action = self.select_action(env)
 
-            obs, reward, terminated, truncated, info = env.step(action)
+            next_obs, reward, terminated, truncated, next_info = env.step(action)
             total_reward += reward
             done = terminated or truncated
 
+            trajectory.append({
+                "step": env.steps_taken,
+                "action": action,
+                "state": state_before,
+                "obs": obs_before,
+                "next_obs": [round(float(x), 4) for x in next_obs.tolist()],
+                "reward": round(float(reward), 4),
+                "cumulative_reward": round(float(total_reward), 4),
+                "terminated": terminated,
+                "truncated": truncated,
+            })
+            obs = next_obs
+            info = next_info
+
         result = {
             "task_id": self.task_id,
+            "instruction": instruction,
             "steps": env.steps_taken,
             "total_reward": round(total_reward, 3),
             "order": info["last_order"],
             "trajectory": trajectory,
         }
-        json_path = save_run_report(result, agent_type="scripted")
+        save_run_report(result, agent_type="scripted")
         return result
 
     def select_action(self, env: ShoppingEnv):

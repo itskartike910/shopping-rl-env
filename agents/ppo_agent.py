@@ -72,6 +72,58 @@ class LightweightPolicyGradientAgent:
         action = np.random.choice(self.action_dim, p=probs)
         return action, h, probs
 
+    def evaluate_greedy(self, env: ShoppingEnv) -> dict:
+        """Run one deterministic greedy evaluation episode after training and capture full trace."""
+        wrapped = DiscreteShoppingWrapper(env)
+        obs, info = wrapped.reset()
+        instruction = info.get("instruction", "")
+        trajectory = []
+        total_reward = 0.0
+        done = False
+
+        while not done:
+            _, probs = self.forward(obs)
+            action = int(np.argmax(probs))
+            action_label = (
+                f"ADD_TO_CART {env.catalog_list[action]['id']}"
+                if action < len(env.catalog_list)
+                else "CHECKOUT"
+            )
+            state_before = {
+                "page": info.get("current_page"),
+                "cart": [dict(c) for c in info.get("cart", [])],
+                "cart_total": info.get("cart_total", 0),
+                "budget_remaining": info.get("budget_remaining", 0),
+            }
+            obs_before = [round(float(x), 4) for x in obs.tolist()]
+            next_obs, reward, terminated, truncated, next_info = wrapped.step(action)
+            total_reward += reward
+            done = terminated or truncated
+
+            trajectory.append({
+                "step": env.steps_taken,
+                "action": {"discrete_id": action, "decoded": action_label},
+                "thought": f"Greedy policy argmax prob={float(probs[action]):.4f}",
+                "state": state_before,
+                "obs": obs_before,
+                "next_obs": [round(float(x), 4) for x in next_obs.tolist()],
+                "reward": round(float(reward), 4),
+                "cumulative_reward": round(float(total_reward), 4),
+                "terminated": terminated,
+                "truncated": truncated,
+            })
+            obs = next_obs
+            info = next_info
+
+        return {
+            "task_id": env.task_id,
+            "instruction": instruction,
+            "steps": env.steps_taken,
+            "total_reward": round(float(total_reward), 4),
+            "order": info.get("last_order"),
+            "trajectory": trajectory,
+        }
+
     def train(self, env: ShoppingEnv, episodes: int = 300, print_interval: int = 50):
         wrapped = DiscreteShoppingWrapper(env)
         print(f"\n[RL Trainer] Training Policy Gradient on Task {env.task_id}: {env.task['name']}")
@@ -138,15 +190,19 @@ class LightweightPolicyGradientAgent:
                 recent_avg = np.mean(reward_history[-print_interval:])
                 print(f"  Episode {ep:3d}/{episodes} | Average Reward: {recent_avg:+.3f} | Last Return: {ep_return:+.3f}")
 
-        print(f"\n[RL Trainer] Training complete on Task {env.task_id}.")
-        # Save a report for the final evaluation episode
-        final_ep_result = {
-            "task_id": env.task_id,
-            "steps": episodes,
-            "total_reward": round(float(np.mean(reward_history[-10:])), 4),
-            "order": None,
+        print(f"\n[RL Trainer] Training complete on Task {env.task_id}. Running greedy evaluation episode...")
+        eval_res = self.evaluate_greedy(env)
+        eval_res["training_summary"] = {
+            "algorithm": "REINFORCE with Baseline (NumPy MLP)",
+            "episodes": episodes,
+            "learning_rate": self.lr,
+            "initial_50_avg_reward": round(float(np.mean(reward_history[:min(50, len(reward_history))])), 4),
+            "final_50_avg_reward": round(float(np.mean(reward_history[-min(50, len(reward_history)):])), 4),
+            "greedy_eval_steps": eval_res["steps"],
+            "greedy_eval_reward": eval_res["total_reward"],
+            "greedy_eval_order_placed": eval_res["order"] is not None,
         }
-        save_run_report(final_ep_result, agent_type="ppo", model="LightweightPG")
+        save_run_report(eval_res, agent_type="ppo", model="LightweightPG")
         return reward_history
 
 
@@ -154,7 +210,6 @@ def train_sb3_ppo(env: ShoppingEnv, total_timesteps: int = 10000):
     """Train with Stable-Baselines3 PPO if available."""
     try:
         from stable_baselines3 import PPO
-        from stable_baselines3.common.env_checker import check_env
 
         wrapped = DiscreteShoppingWrapper(env)
         print("\n[SB3] Initializing PPO agent...")
@@ -164,9 +219,48 @@ def train_sb3_ppo(env: ShoppingEnv, total_timesteps: int = 10000):
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
         model.save(model_path)
         print(f"[SB3] PPO model trained and saved to {model_path}.zip")
-        # Save report for SB3 run
+
+        # Run one deterministic post-training evaluation episode
+        obs, info = wrapped.reset()
+        instruction = info.get("instruction", "")
+        trajectory = []
+        total_reward = 0.0
+        done = False
+        while not done:
+            action, _ = model.predict(obs, deterministic=True)
+            action = int(action)
+            action_label = (
+                f"ADD_TO_CART {env.catalog_list[action]['id']}"
+                if action < len(env.catalog_list)
+                else "CHECKOUT"
+            )
+            obs_before = [round(float(x), 4) for x in obs.tolist()]
+            next_obs, reward, terminated, truncated, next_info = wrapped.step(action)
+            total_reward += float(reward)
+            done = terminated or truncated
+            trajectory.append({
+                "step": env.steps_taken,
+                "action": {"discrete_id": action, "decoded": action_label},
+                "obs": obs_before,
+                "next_obs": [round(float(x), 4) for x in next_obs.tolist()],
+                "reward": round(float(reward), 4),
+                "cumulative_reward": round(total_reward, 4),
+                "terminated": terminated,
+                "truncated": truncated,
+            })
+            obs = next_obs
+            info = next_info
+
         save_run_report(
-            {"task_id": env.task_id, "steps": total_timesteps, "total_reward": 0.0, "order": None},
+            {
+                "task_id": env.task_id,
+                "instruction": instruction,
+                "steps": env.steps_taken,
+                "total_reward": round(total_reward, 4),
+                "order": info.get("last_order"),
+                "trajectory": trajectory,
+                "training_summary": {"algorithm": "SB3-PPO", "total_timesteps": total_timesteps},
+            },
             agent_type="ppo",
             model="SB3-PPO",
         )

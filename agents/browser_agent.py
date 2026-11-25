@@ -42,9 +42,14 @@ def _load_env_file():
 
 
 def ensure_store_running(base_url: str):
-    """If base_url is localhost and not reachable, start store in a daemon thread."""
-    if "localhost" not in base_url and "127.0.0.1" not in base_url:
+    """If base_url is localhost and not reachable, start store on the URL's port in a daemon thread."""
+    from urllib.parse import urlparse
+    parsed = urlparse(base_url)
+    host = parsed.hostname or "localhost"
+    if host not in ("localhost", "127.0.0.1"):
         return
+    port = parsed.port or 5000
+
     import urllib.request
     try:
         urllib.request.urlopen(f"{base_url}/api/catalog", timeout=1.0)
@@ -52,11 +57,24 @@ def ensure_store_running(base_url: str):
     except Exception:
         pass
 
-    print("[BrowserAgent] Local store not responding. Starting store in background thread...")
+    print(f"[BrowserAgent] Local store not responding at {base_url}. Starting store on port {port} in background thread...")
     from store.app import app
-    t = threading.Thread(target=lambda: app.run(host="127.0.0.1", port=5000, debug=False, use_reloader=False), daemon=True)
+    t = threading.Thread(
+        target=lambda: app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False),
+        daemon=True,
+    )
     t.start()
-    time.sleep(1.5)
+    for _ in range(15):
+        time.sleep(0.2)
+        try:
+            urllib.request.urlopen(f"{base_url}/api/catalog", timeout=1.0)
+            return
+        except Exception:
+            continue
+    raise RuntimeError(
+        f"Failed to start or reach local Flask store at {base_url}. "
+        f"Port {port} may already be occupied by another process — pass --base-url http://127.0.0.1:<free_port>."
+    )
 
 
 class BrowserShoppingAgent:
@@ -181,41 +199,47 @@ class BrowserShoppingAgent:
         tid = self.task_id
         print(f"\n[BrowserAgent] Running Task {tid} ({self.task_def.get('name')}) in SCRIPTED mode...")
         steps = 0
+        trajectory = []
 
+        def _exec_and_log(act_name, param, fn):
+            nonlocal steps
+            steps += 1
+            state_before = {
+                "url": self.page.url,
+                "cart_pids": list(self.cart_pids),
+                "visible_products": [c.inner_text().replace("\n", " | ") for c in self.page.locator(".product-card").all()[:8]],
+            }
+            res = fn()
+            trajectory.append({
+                "step": steps,
+                "action": {"action": act_name, "param": param},
+                "state": state_before,
+                "obs": {"url_after": self.page.url, "cart_pids": list(self.cart_pids)},
+            })
+            return res
+
+        order_id = None
         if tid == 1:
-            self.action_search("bottle")
-            steps += 1
-            self.action_add_to_cart("BOT-01")
-            steps += 1
-            order_id = self.action_checkout()
-            steps += 1
+            _exec_and_log("SEARCH", "bottle", lambda: self.action_search("bottle"))
+            _exec_and_log("ADD_TO_CART", "BOT-01", lambda: self.action_add_to_cart("BOT-01"))
+            order_id = _exec_and_log("CHECKOUT", "", self.action_checkout)
 
         elif tid == 2:
-            self.action_search("mouse")
-            steps += 1
-            self.action_add_to_cart("MOU-01")
-            steps += 1
-            order_id = self.action_checkout()
-            steps += 1
+            _exec_and_log("SEARCH", "mouse", lambda: self.action_search("mouse"))
+            _exec_and_log("ADD_TO_CART", "MOU-01", lambda: self.action_add_to_cart("MOU-01"))
+            order_id = _exec_and_log("CHECKOUT", "", self.action_checkout)
 
         elif tid == 3:
-            self.action_search("keyboard")
-            steps += 1
-            self.action_add_to_cart("KEY-02")
-            steps += 1
-            self.action_search("mouse")
-            steps += 1
-            self.action_add_to_cart("MOU-04")
-            steps += 1
-            order_id = self.action_checkout()
-            steps += 1
+            _exec_and_log("SEARCH", "keyboard", lambda: self.action_search("keyboard"))
+            _exec_and_log("ADD_TO_CART", "KEY-02", lambda: self.action_add_to_cart("KEY-02"))
+            _exec_and_log("SEARCH", "mouse", lambda: self.action_search("mouse"))
+            _exec_and_log("ADD_TO_CART", "MOU-04", lambda: self.action_add_to_cart("MOU-04"))
+            order_id = _exec_and_log("CHECKOUT", "", self.action_checkout)
 
         elif tid == 4:
             for pid in ["CPU-01", "MB-01", "RAM-02"]:
-                self.action_add_to_cart(pid)
-                steps += 1
-            order_id = self.action_checkout()
-            steps += 1
+                _exec_and_log("ADD_TO_CART", pid, lambda p=pid: self.action_add_to_cart(p))
+            order_id = _exec_and_log("CHECKOUT", "", self.action_checkout)
 
         elif tid == 5:
             bundle_pids = [
@@ -223,16 +247,13 @@ class BrowserShoppingAgent:
                 "CAB-02", "PSU-01", "MON-01", "KEY-02", "MOU-04"
             ]
             for pid in bundle_pids:
-                self.action_add_to_cart(pid)
-                steps += 1
-            order_id = self.action_checkout()
-            steps += 1
+                _exec_and_log("ADD_TO_CART", pid, lambda p=pid: self.action_add_to_cart(p))
+            order_id = _exec_and_log("CHECKOUT", "", self.action_checkout)
 
         else:
-            order_id = self.action_checkout()
-            steps += 1
+            order_id = _exec_and_log("CHECKOUT", "", self.action_checkout)
 
-        return self._finish_run(order_id, steps, agent_type="scripted_browser")
+        return self._finish_run(order_id, steps, agent_type="scripted_browser", trajectory=trajectory)
 
     # --- Groq Runner ---
 
@@ -241,9 +262,11 @@ class BrowserShoppingAgent:
         tid = self.task_id
         print(f"\n[BrowserAgent] Running Task {tid} ({self.task_def.get('name')}) in GROQ LLM mode...")
         max_steps = self.task_def.get("max_steps", 15)
+        max_budget = self.task_def.get("constraints", {}).get("max_budget", 0)
         steps = 0
         order_id = None
         history = []
+        trajectory = []
 
         while steps < max_steps and not order_id:
             steps += 1
@@ -260,7 +283,7 @@ class BrowserShoppingAgent:
 TASK OBJECTIVE:
 {self.task_def.get('instruction')}
 
-BUDGET CEILING: ₹{self.task_def.get('max_budget', 0):,}
+BUDGET CEILING: ₹{max_budget:,}
 CURRENT STEP: {steps}/{max_steps}
 CURRENT URL: {self.page.url}
 CURRENT CART ITEMS ({len(self.cart_pids)} items): {json.dumps(self.cart_pids)}
@@ -284,6 +307,7 @@ INSTRUCTIONS & RULES:
 }}
 """
             action_dict = None
+            raw_response = None
             if self.groq_client:
                 try:
                     res = self.groq_client.chat.completions.create(
@@ -295,7 +319,8 @@ INSTRUCTIONS & RULES:
                         temperature=0.1,
                         response_format={"type": "json_object"}
                     )
-                    action_dict = json.loads(res.choices[0].message.content)
+                    raw_response = res.choices[0].message.content
+                    action_dict = json.loads(raw_response)
                 except Exception as e:
                     print(f"  [Groq] API notice: {e}. Using fallback.")
 
@@ -307,6 +332,7 @@ INSTRUCTIONS & RULES:
                     action_dict = {"thought": "Add MOU-01", "action": "ADD_TO_CART", "param": "MOU-01"}
                 else:
                     action_dict = {"thought": "Required items in cart, checkout", "action": "CHECKOUT", "param": ""}
+                raw_response = json.dumps(action_dict)
 
             if "thought" in action_dict:
                 print(f"  💭 Thought: {action_dict['thought']}")
@@ -320,23 +346,48 @@ INSTRUCTIONS & RULES:
                 print(f"  [Notice] All required items {req_pids} are already in cart. Overriding to CHECKOUT.")
                 act = "CHECKOUT"
 
+            state_before = {
+                "url": self.page.url,
+                "cart_pids": list(self.cart_pids),
+                "cart_total": cart_total,
+                "visible_products": visible_products,
+            }
             history.append(f"Step {steps}: {act} {param}".strip())
 
             if act == "SEARCH":
                 self.action_search(param)
             elif act == "SORT_BY":
                 self.action_sort(param)
+            elif act == "FILTER_CATEGORY":
+                self.action_filter_category(param)
             elif act == "ADD_TO_CART":
                 self.action_add_to_cart(param)
             elif act == "VIEW_CART":
                 self.action_view_cart()
             elif act == "CHECKOUT":
                 order_id = self.action_checkout()
+
+            trajectory.append({
+                "step": steps,
+                "action": {"action": act, "param": param},
+                "thought": action_dict.get("thought", ""),
+                "prompt": prompt,
+                "raw_response": raw_response,
+                "state": state_before,
+                "obs": {"url_after": self.page.url, "cart_pids": list(self.cart_pids)},
+            })
+            if act == "CHECKOUT":
                 break
 
-        return self._finish_run(order_id, steps, agent_type="groq_browser")
+        return self._finish_run(order_id, steps, agent_type="groq_browser", trajectory=trajectory)
 
-    def _finish_run(self, order_id: Optional[str], steps: int, agent_type: str) -> Dict[str, Any]:
+    def _finish_run(
+        self,
+        order_id: Optional[str],
+        steps: int,
+        agent_type: str,
+        trajectory: Optional[list] = None,
+    ) -> Dict[str, Any]:
         """Grade order and save run report."""
         order_dict = None
         if order_id:
@@ -349,9 +400,11 @@ INSTRUCTIONS & RULES:
 
         result_record = {
             "task_id": self.task_id,
+            "instruction": self.task_def.get("instruction", ""),
             "steps": steps,
             "total_reward": 1.0 + (eval_result["webshop_score"] * 0.5) if eval_result["passed"] else -0.1,
-            "order": order_dict or {"order_id": order_id or "N/A", "total": eval_result.get("real_total", 0)}
+            "order": order_dict or {"order_id": order_id or "N/A", "total": eval_result.get("real_total", 0)},
+            "trajectory": trajectory or [],
         }
 
         save_run_report(

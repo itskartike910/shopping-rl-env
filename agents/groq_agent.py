@@ -36,6 +36,7 @@ class GroqShoppingAgent:
         self.model_name = model_name
         self.api_key = api_key or os.environ.get("GROQ_API_KEY")
         self.client = None
+        self.last_trace: Dict[str, Any] = {}
 
         if self.api_key:
             try:
@@ -46,10 +47,6 @@ class GroqShoppingAgent:
 
     def select_action(self, obs_info: Dict[str, Any]) -> Dict[str, Any]:
         """Prompt LLM to select next action from observation."""
-        if not self.client:
-            print("[GroqAgent] Notice: GROQ_API_KEY not found in environment. Using heuristic fallback.")
-            return self._heuristic_fallback(obs_info)
-
         prompt = f"""You are an autonomous e-commerce shopping agent in a reinforcement learning environment.
 Your goal is to satisfy the assigned task within budget and step limits.
 
@@ -83,6 +80,12 @@ Respond with ONLY a JSON object containing your selected action:
   "param": "PARAMETER_OR_PRODUCT_ID"
 }}
 """
+        if not self.client:
+            print("[GroqAgent] Notice: GROQ_API_KEY not found in environment. Using heuristic fallback.")
+            action = self._heuristic_fallback(obs_info)
+            self.last_trace = {"prompt": prompt, "thought": "Heuristic fallback (no API client)", "raw_response": json.dumps(action)}
+            return action
+
         try:
             chat_completion = self.client.chat.completions.create(
                 messages=[
@@ -95,13 +98,20 @@ Respond with ONLY a JSON object containing your selected action:
             )
             raw = chat_completion.choices[0].message.content
             parsed = json.loads(raw)
+            self.last_trace = {
+                "prompt": prompt,
+                "thought": parsed.get("thought", ""),
+                "raw_response": raw,
+            }
             return {
                 "action": parsed.get("action", "CHECKOUT"),
                 "param": parsed.get("param", 0)
             }
         except Exception as e:
             print(f"[GroqAgent] API Error: {e}. Falling back to heuristic.")
-            return self._heuristic_fallback(obs_info)
+            action = self._heuristic_fallback(obs_info)
+            self.last_trace = {"prompt": prompt, "thought": f"Heuristic fallback after API error: {e}", "raw_response": json.dumps(action)}
+            return action
 
     def _heuristic_fallback(self, obs_info: Dict[str, Any]) -> Dict[str, Any]:
         """Safe fallback if API key is not yet set."""
@@ -117,26 +127,56 @@ Respond with ONLY a JSON object containing your selected action:
     def run_episode(self, env: ShoppingEnv) -> Dict[str, Any]:
         """Run a full episode with the Groq agent."""
         obs, info = env.reset()
+        instruction = info.get("instruction", "")
+        trajectory = []
         done = False
         total_reward = 0.0
 
-        print(f"\n[GroqAgent] Starting Task {env.task_id}: {info['instruction']}")
+        print(f"\n[GroqAgent] Starting Task {env.task_id}: {instruction}")
         while not done:
+            state_before = {
+                "page": info.get("current_page"),
+                "cart": [dict(c) for c in info.get("cart", [])],
+                "cart_total": info.get("cart_total", 0),
+                "budget_remaining": info.get("budget_remaining", 0),
+                "visible_product_ids": [p["id"] for p in info.get("visible_products", [])],
+            }
+            obs_before = [round(float(x), 4) for x in obs.tolist()]
             action = self.select_action(info)
+            trace = dict(self.last_trace)
             print(f"  Step {env.steps_taken + 1}: Executing action {action}")
-            obs, reward, terminated, truncated, info = env.step(action)
+            next_obs, reward, terminated, truncated, next_info = env.step(action)
             total_reward += reward
             done = terminated or truncated
+
+            trajectory.append({
+                "step": env.steps_taken,
+                "action": action,
+                "thought": trace.get("thought", ""),
+                "prompt": trace.get("prompt", ""),
+                "raw_response": trace.get("raw_response", ""),
+                "state": state_before,
+                "obs": obs_before,
+                "next_obs": [round(float(x), 4) for x in next_obs.tolist()],
+                "reward": round(float(reward), 4),
+                "cumulative_reward": round(float(total_reward), 4),
+                "terminated": terminated,
+                "truncated": truncated,
+            })
+            obs = next_obs
+            info = next_info
 
         order = info["last_order"]
         status = order["status"] if order else "none"
         print(f"[GroqAgent] Finished in {env.steps_taken} steps. Total Reward: {total_reward:.2f} | Order Status: {status}")
         result = {
             "task_id": env.task_id,
+            "instruction": instruction,
             "steps": env.steps_taken,
             "total_reward": total_reward,
             "reward": total_reward,
             "order": order,
+            "trajectory": trajectory,
         }
         save_run_report(result, agent_type="groq", model=self.model_name)
         return result
